@@ -15,30 +15,28 @@
 
 # Yannick Méheut [yannick (at) meheut (dot) org] - Copyright © 2023
 
-import sys
 import logging
-import socket
 import ntpath
-import ldap3
 import os
-import tempfile
+import socket
 import ssl
+import tempfile
 
-from ldap3.protocol.formatters.formatters import *
-
-from impacket.smbconnection import SMBConnection
-from impacket.smbconnection import SessionError
-from impacket.krb5.ccache import CCache, Credential, CountedOctetString
-from impacket.krb5 import constants
-from impacket.krb5.types import Principal
-from impacket.dcerpc.v5.rpcrt import RPC_C_AUTHN_LEVEL_PKT_PRIVACY, RPC_C_AUTHN_LEVEL_PKT_INTEGRITY
+import ldap3
 from impacket.dcerpc.v5 import transport, wkst, srvs, samr, scmr, drsuapi, epm
 from impacket.dcerpc.v5.dcom import wmi
-from impacket.dcerpc.v5.dtypes import NULL
 from impacket.dcerpc.v5.dcomrt import DCOMConnection
-from impacket.dcerpc.v5.rpcrt import DCERPCException
+from impacket.dcerpc.v5.dtypes import NULL
+from impacket.dcerpc.v5.rpcrt import RPC_C_AUTHN_LEVEL_PKT_PRIVACY, RPC_C_AUTHN_LEVEL_PKT_INTEGRITY
+from impacket.krb5 import constants
+from impacket.krb5.ccache import CCache, Credential, CountedOctetString
+from impacket.krb5.types import Principal
+from impacket.smbconnection import SMBConnection
+from impacket.smbconnection import SessionError
+from ldap3.protocol.formatters.formatters import *
 
 import pywerview.formatters as fmt
+
 
 class LDAPRequester():
     def __init__(self, domain_controller, domain=str(), user=str(), password=str(),
@@ -90,31 +88,32 @@ class LDAPRequester():
     def _parse_ldap_invalid_credentials_result_message(self, message):
         # https://ldapwiki.com/wiki/Wiki.jsp?page=Common%20Active%20Directory%20Bind%20Errors
         error_codes = {
-                        0x52e      : "ERROR_LOGON_FAILURE",
-                        0x52f      : "ERROR_ACCOUNT_RESTRICTION",
-                        0x530      : "ERROR_INVALID_LOGON_HOURS",
-                        0x531      : "ERROR_INVALID_WORKSTATION",
-                        0x532      : "ERROR_PASSWORD_EXPIRED",
-                        0x533      : "ERROR_ACCOUNT_DISABLED",
-                        0x701      : "ERROR_ACCOUNT_EXPIRED",
-                        0x703      : "ERROR_PASSWORD_MUST_CHANGE",
-                        0x775      : "ERROR_ACCOUNT_LOCKED_OUT",
-                        0x80090346 : "SEC_E_BAD_BINDINGS"
-                      }
+            0x52e: "ERROR_LOGON_FAILURE",
+            0x52f: "ERROR_ACCOUNT_RESTRICTION",
+            0x530: "ERROR_INVALID_LOGON_HOURS",
+            0x531: "ERROR_INVALID_WORKSTATION",
+            0x532: "ERROR_PASSWORD_EXPIRED",
+            0x533: "ERROR_ACCOUNT_DISABLED",
+            0x701: "ERROR_ACCOUNT_EXPIRED",
+            0x703: "ERROR_PASSWORD_MUST_CHANGE",
+            0x775: "ERROR_ACCOUNT_LOCKED_OUT",
+            0x80090346: "SEC_E_BAD_BINDINGS"
+        }
         try:
             # Message is something like:
             # 80090308: LdapErr: DSID-0C090569, comment: AcceptSecurityContext error, data 775, v4563
             # we need to extract the "data" code
             data_code = message.split(": ")[3].split(', ')[1].strip(" data")
-            data_code = int(data_code,16)
+            data_code = int(data_code, 16)
         except(IndexError, KeyError):
             self._logger.warning('Unable to parse error code')
             return message
         return error_codes[data_code]
 
     def _do_ntlm_auth(self, ldap_scheme, formatter, seal_and_sign=False, tls_channel_binding=False):
-        self._logger.debug('LDAP authentication with NTLM: ldap_scheme = {0} / seal_and_sign = {1} / tls_channel_binding = {2}'.format(
-                            ldap_scheme, seal_and_sign, tls_channel_binding))
+        self._logger.debug(
+            'LDAP authentication with NTLM: ldap_scheme = {0} / seal_and_sign = {1} / tls_channel_binding = {2}'.format(
+                ldap_scheme, seal_and_sign, tls_channel_binding))
         ldap_server = ldap3.Server('{}://{}'.format(ldap_scheme, self._domain_controller), formatter=formatter)
         user = '{}\\{}'.format(self._domain, self._user)
         ldap_connection_kwargs = {'user': user, 'raise_exceptions': True, 'authentication': ldap3.NTLM}
@@ -122,11 +121,12 @@ class LDAPRequester():
         if self._lmhash and self._nthash:
             ldap_connection_kwargs['password'] = '{}:{}'.format(self._lmhash, self._nthash)
             self._logger.debug('LDAP binding parameters: server = {0} / user = {1} '
-               '/ hash = {2}'.format(self._domain_controller, user, ldap_connection_kwargs['password']))
+                               '/ hash = {2}'.format(self._domain_controller, user, ldap_connection_kwargs['password']))
         else:
             ldap_connection_kwargs['password'] = self._password
             self._logger.debug('LDAP binding parameters: server = {0} / user = {1} '
-               '/ password = {2}'.format(self._domain_controller, user, ldap_connection_kwargs['password']))
+                               '/ password = {2}'.format(self._domain_controller, user,
+                                                         ldap_connection_kwargs['password']))
 
         if seal_and_sign:
             ldap_connection_kwargs['session_security'] = ldap3.ENCRYPT
@@ -137,33 +137,38 @@ class LDAPRequester():
             ldap_connection = ldap3.Connection(ldap_server, **ldap_connection_kwargs)
             ldap_connection.bind()
         except ldap3.core.exceptions.LDAPSocketOpenError as e:
-                self._logger.critical(e)
-                if self._do_tls:
-                    self._logger.critical('TLS negociation failed, this error is mostly due to your host '
-                                          'not supporting SHA1 as signing algorithm for certificates')
-                sys.exit(-1)
+            self._logger.critical(e)
+            if self._do_tls:
+                self._logger.critical('TLS negociation failed, this error is mostly due to your host '
+                                      'not supporting SHA1 as signing algorithm for certificates')
+            raise Exception(e)
         except ldap3.core.exceptions.LDAPInvalidCredentialsResult:
-                parsed_error_message = self._parse_ldap_invalid_credentials_result_message(ldap_connection.result['message'])
-                self._logger.warning('Server returns LDAPInvalidCredentialsResult')
-                # https://github.com/zyn3rgy/LdapRelayScan#ldaps-channel-binding-token-requirements
-                if parsed_error_message == "SEC_E_BAD_BINDINGS" and not self._tls_channel_binding_supported:
-                        if self._lmhash and self._nthash:
-                            self._logger.critical('Server requires Channel Binding Token and your ldap3 install does not support it. '
-                                                  'Please install https://github.com/cannatag/ldap3/pull/1087, try another authentication method, '
-                                                  'or use a password, not a hash, to authenticate.')
-                            sys.exit(-1)
-                        else:
-                            self._logger.debug('Server requires Channel Binding Token but you are using password authentication,'
-                                               ' falling back to SIMPLE authentication, hoping LDAPS port is open')
-                            self._do_simple_auth('ldaps', formatter)
-                            return
-                elif self._tls_channel_binding_supported == True:
-                    self._logger.warning('Falling back to TLS with channel binding')
-                    self._do_ntlm_auth(ldap_scheme, formatter, tls_channel_binding=True)
-                    return
+            parsed_error_message = self._parse_ldap_invalid_credentials_result_message(
+                ldap_connection.result['message'])
+            self._logger.warning('Server returns LDAPInvalidCredentialsResult')
+            # https://github.com/zyn3rgy/LdapRelayScan#ldaps-channel-binding-token-requirements
+            if parsed_error_message == "SEC_E_BAD_BINDINGS" and not self._tls_channel_binding_supported:
+                if self._lmhash and self._nthash:
+                    self._logger.critical(
+                        'Server requires Channel Binding Token and your ldap3 install does not support it. '
+                        'Please install https://github.com/cannatag/ldap3/pull/1087, try another authentication method, '
+                        'or use a password, not a hash, to authenticate.')
+                    raise Exception('Server requires Channel Binding Token and your ldap3 install does not support it. '
+                                    'Please install https://github.com/cannatag/ldap3/pull/1087, try another authentication method, '
+                                    'or use a password, not a hash, to authenticate.')
                 else:
-                    self._logger.critical('Invalid Credentials : {}'.format(parsed_error_message))
-                    sys.exit(-1)
+                    self._logger.debug(
+                        'Server requires Channel Binding Token but you are using password authentication,'
+                        ' falling back to SIMPLE authentication, hoping LDAPS port is open')
+                    self._do_simple_auth('ldaps', formatter)
+                    return
+            elif self._tls_channel_binding_supported == True:
+                self._logger.warning('Falling back to TLS with channel binding')
+                self._do_ntlm_auth(ldap_scheme, formatter, tls_channel_binding=True)
+                return
+            else:
+                self._logger.critical('Invalid Credentials : {}'.format(parsed_error_message))
+                raise Exception('Invalid Credentials : {}'.format(parsed_error_message))
 
         except ldap3.core.exceptions.LDAPStrongerAuthRequiredResult:
             self._logger.warning('Server returns LDAPStrongerAuthRequiredResult')
@@ -182,10 +187,10 @@ class LDAPRequester():
 
     def _do_kerberos_auth(self, ldap_scheme, formatter, seal_and_sign=False):
         self._logger.debug('LDAP authentication with Kerberos: ldap_scheme = {0} / seal_and_sign = {1}'.format(
-                            ldap_scheme, seal_and_sign))
+            ldap_scheme, seal_and_sign))
         ldap_server = ldap3.Server('{}://{}'.format(ldap_scheme, self._domain_controller), formatter=formatter)
         user = '{}@{}'.format(self._user, self._domain.upper())
-        ldap_connection_kwargs = {'user': user, 'raise_exceptions': True, 
+        ldap_connection_kwargs = {'user': user, 'raise_exceptions': True,
                                   'authentication': ldap3.SASL,
                                   'sasl_mechanism': ldap3.KERBEROS}
 
@@ -215,7 +220,7 @@ class LDAPRequester():
                 cred_store = dict()
         else:
             self._logger.debug('TGS not found in KRB5CCNAME, looking for '
-                    'TGS with alternative SPN')
+                               'TGS with alternative SPN')
             # If we don't find it, we search for any SPN
             creds = ccache.getCredential(principal, anySPN=True)
             if creds:
@@ -230,21 +235,22 @@ class LDAPRequester():
             else:
                 # If we don't find any, we hope for the best (TGT in cache)
                 self._logger.debug('Alternative TGS not found, using KRB5CCNAME as is '
-                        'while hoping it contains a TGT')
+                                   'while hoping it contains a TGT')
                 cred_store = dict()
         ldap_connection_kwargs['cred_store'] = cred_store
         self._logger.debug('LDAP binding parameters: server = {0} / user = {1} '
-               '/ Kerberos auth'.format(self._domain_controller, user))
+                           '/ Kerberos auth'.format(self._domain_controller, user))
 
         try:
             ldap_connection = ldap3.Connection(ldap_server, **ldap_connection_kwargs)
             ldap_connection.bind()
         except ldap3.core.exceptions.LDAPSocketOpenError as e:
-                self._logger.critical(e)
-                if self._do_tls:
-                    self._logger.critical('TLS negociation failed, this error is mostly due to your host '
-                                          'not supporting SHA1 as signing algorithm for certificates')
-                sys.exit(-1)
+            self._logger.critical(e)
+            if self._do_tls:
+                self._logger.critical('TLS negociation failed, this error is mostly due to your host '
+                                      'not supporting SHA1 as signing algorithm for certificates')
+            raise Exception('TLS negociation failed, this error is mostly due to your host '
+                            'not supporting SHA1 as signing algorithm for certificates')
 
         except ldap3.core.exceptions.LDAPStrongerAuthRequiredResult:
             self._logger.warning('Server returns LDAPStrongerAuthRequiredResult')
@@ -266,19 +272,22 @@ class LDAPRequester():
         ldap_server = ldap3.Server('{}://{}'.format(ldap_scheme, self._domain_controller), formatter=formatter)
         user = None
         tls_mode = 'Implicit'
-        tls = ldap3.Tls(local_private_key_file=self._user_key, local_certificate_file=self._user_cert, validate=ssl.CERT_NONE)
+        tls = ldap3.Tls(local_private_key_file=self._user_key, local_certificate_file=self._user_cert,
+                        validate=ssl.CERT_NONE)
         ldap_server.tls = tls
         ldap_connection_kwargs = {'user': user, 'raise_exceptions': True}
 
         # Explicit TLS, setting up StartTLS
         if not self._do_tls:
             tls_mode = 'Explicit'
-            self._logger.warning('Using certificate authentication but --tls not provided, setting up TLS with StartTLS')
+            self._logger.warning(
+                'Using certificate authentication but --tls not provided, setting up TLS with StartTLS')
             ldap_connection_kwargs['authentication'] = ldap3.SASL
             ldap_connection_kwargs['sasl_mechanism'] = ldap3.EXTERNAL
 
         self._logger.debug('LDAP binding parameters: server = {0} / cert = {1} '
-            '/ key = {2} / {3} TLS / SChannel auth'.format(self._domain_controller, self._user_cert, self._user_key, tls_mode))
+                           '/ key = {2} / {3} TLS / SChannel auth'.format(self._domain_controller, self._user_cert,
+                                                                          self._user_key, tls_mode))
 
         try:
             ldap_connection = ldap3.Connection(ldap_server, **ldap_connection_kwargs)
@@ -292,18 +301,21 @@ class LDAPRequester():
                     ldap_connection.bind()
                 else:
                     self._logger.critical('StartTLS failed, exiting')
-                    sys.exit(-1)
+                    raise Exception('TLS negociation failed, this error is mostly due to your host '
+                                    'not supporting SHA1 as signing algorithm for certificates')
         except Exception as e:
             # I don't really understand exception when using SChannel authentication, but if you see this message
             # your cert and key are probably not valid
             self._logger.critical('Exception during SChannel authentication: {}'.format(e))
-            sys.exit(-1)
+            raise Exception('TLS negociation failed, this error is mostly due to your host '
+                            'not supporting SHA1 as signing algorithm for certificates')
 
         who_am_i = ldap_connection.extend.standard.who_am_i()
 
         if not who_am_i:
             self._logger.critical('Certificate authentication failed')
-            sys.exit(-1)
+            raise Exception('TLS negociation failed, this error is mostly due to your host '
+                            'not supporting SHA1 as signing algorithm for certificates')
 
         self._logger.debug('Successfully connected to the LDAP as {}'.format(who_am_i))
         self._ldap_connection = ldap_connection
@@ -316,21 +328,23 @@ class LDAPRequester():
 
         ldap_connection_kwargs['password'] = self._password
         self._logger.debug('LDAP binding parameters: server = {0} / user = {1} '
-            '/ password = {2}'.format(self._domain_controller, user, ldap_connection_kwargs['password']))
+                           '/ password = {2}'.format(self._domain_controller, user, ldap_connection_kwargs['password']))
 
         try:
             ldap_connection = ldap3.Connection(ldap_server, **ldap_connection_kwargs)
             ldap_connection.bind()
         except ldap3.core.exceptions.LDAPSocketOpenError as e:
-                self._logger.critical(e)
-                if self._do_tls:
-                    self._logger.critical('TLS negociation failed, this error is mostly due to your host '
-                                          'not supporting SHA1 as signing algorithm for certificates')
-                sys.exit(-1)
+            self._logger.critical(e)
+            if self._do_tls:
+                self._logger.critical('TLS negociation failed, this error is mostly due to your host '
+                                      'not supporting SHA1 as signing algorithm for certificates')
+            raise Exception('TLS negociation failed, this error is mostly due to your host '
+                            'not supporting SHA1 as signing algorithm for certificates')
         except ldap3.core.exceptions.LDAPInvalidCredentialsResult as e:
-            parsed_error_message = self._parse_ldap_invalid_credentials_result_message(ldap_connection.result['message'])
+            parsed_error_message = self._parse_ldap_invalid_credentials_result_message(
+                ldap_connection.result['message'])
             self._logger.critical('Invalid Credentials : {}'.format(parsed_error_message))
-            sys.exit(-1)
+            raise Exception('Invalid Credentials : {}'.format(parsed_error_message))
 
         who_am_i = ldap_connection.extend.standard.who_am_i()
         self._logger.debug('Successfully connected to the LDAP as {}'.format(who_am_i))
@@ -349,7 +363,7 @@ class LDAPRequester():
                                                                     self._nthash))
 
         smb.login(self._user, self._password, domain=self._domain,
-                lmhash=self._lmhash, nthash=self._nthash)
+                  lmhash=self._lmhash, nthash=self._nthash)
         fqdn = smb.getServerDNSDomainName()
         smb.logoff()
 
@@ -381,7 +395,7 @@ class LDAPRequester():
         if not self._domain:
             if self._do_certificate:
                 self._logger.critical('-w with the FQDN must be used when authenticating with certificates')
-                sys.exit(-1)
+                raise Exception('-w with the FQDN must be used when authenticating with certificates')
             elif self._do_kerberos:
                 ccache = CCache.loadFile(os.getenv('KRB5CCNAME'))
                 self._domain = ccache.principal.realm['data'].decode('utf-8')
@@ -390,13 +404,14 @@ class LDAPRequester():
                     self._domain = self._get_netfqdn()
                 except SessionError as e:
                     self._logger.critical(e)
-                    sys.exit(-1)
+                    raise Exception(e)
 
         if not queried_domain:
             if self._do_certificate:
                 # TODO: CHECK!
                 # Change this message
-                self._logger.warning('Cross domain query with certificate is not yet supported, so domain=queried domain')
+                self._logger.warning(
+                    'Cross domain query with certificate is not yet supported, so domain=queried domain')
                 queried_domain = self._domain
             elif self._do_kerberos:
                 ccache = CCache.loadFile(os.getenv('KRB5CCNAME'))
@@ -406,12 +421,13 @@ class LDAPRequester():
                     queried_domain = self._get_netfqdn()
                 except SessionError as e:
                     self._logger.critical(e)
-                    sys.exit(-1)
+                    raise Exception(e)
         else:
             if self._do_certificate:
                 # TODO: CHECK!
                 # Change this message
-                self._logger.warning('Cross domain query with certificate is not yet supported, so domain=queried domain')
+                self._logger.warning(
+                    'Cross domain query with certificate is not yet supported, so domain=queried domain')
                 queried_domain = self._domain
 
         self._queried_domain = queried_domain
@@ -445,17 +461,17 @@ class LDAPRequester():
 
         # Call custom formatters for several AD attributes
         formatter = {'userAccountControl': fmt.format_useraccountcontrol,
-                'sAMAccountType': fmt.format_samaccounttype,
-                'trustType': fmt.format_trusttype,
-                'trustDirection': fmt.format_trustdirection,
-                'trustAttributes': fmt.format_trustattributes,
-                'msDS-MaximumPasswordAge': format_ad_timedelta,
-                'msDS-MinimumPasswordAge': format_ad_timedelta,
-                'msDS-LockoutDuration': format_ad_timedelta,
-                'msDS-LockoutObservationWindow': format_ad_timedelta,
-                'msDS-GroupMSAMembership': fmt.format_groupmsamembership,
-                'msDS-ManagedPassword': fmt.format_managedpassword,
-                'ms-Mcs-AdmPwdExpirationTime': format_ad_timestamp}
+                     'sAMAccountType': fmt.format_samaccounttype,
+                     'trustType': fmt.format_trusttype,
+                     'trustDirection': fmt.format_trustdirection,
+                     'trustAttributes': fmt.format_trustattributes,
+                     'msDS-MaximumPasswordAge': format_ad_timedelta,
+                     'msDS-MinimumPasswordAge': format_ad_timedelta,
+                     'msDS-LockoutDuration': format_ad_timedelta,
+                     'msDS-LockoutObservationWindow': format_ad_timedelta,
+                     'msDS-GroupMSAMembership': fmt.format_groupmsamembership,
+                     'msDS-ManagedPassword': fmt.format_managedpassword,
+                     'ms-Mcs-AdmPwdExpirationTime': format_ad_timestamp}
 
         if self._do_tls:
             ldap_scheme = 'ldaps'
@@ -470,21 +486,23 @@ class LDAPRequester():
         else:
             self._do_ntlm_auth(ldap_scheme, formatter)
 
-    def _ldap_search(self, search_filter, class_result, attributes=list(), controls=list()):
+    def _ldap_search(self, search_filter, class_result, attributes=tuple(), controls=tuple()):
         results = list()
 
         # if no attribute name specified, we return all attributes
         if not attributes:
-            attributes =  ldap3.ALL_ATTRIBUTES
+            attributes = ldap3.ALL_ATTRIBUTES
 
         self._logger.debug('search_base = {0} / search_filter = {1} / attributes = {2}'.format(self._base_dn,
                                                                                                search_filter,
                                                                                                attributes))
 
         # Microsoft Active Directory set an hard limit of 1000 entries returned by any search
-        search_results=self._ldap_connection.extend.standard.paged_search(search_base=self._base_dn,
-                search_filter=search_filter, attributes=attributes,
-                controls=controls, paged_size=1000, generator=True)
+        search_results = self._ldap_connection.extend.standard.paged_search(search_base=self._base_dn,
+                                                                            search_filter=search_filter,
+                                                                            attributes=attributes,
+                                                                            controls=controls, paged_size=1000,
+                                                                            generator=True)
 
         try:
             # Skip searchResRef
@@ -495,7 +513,7 @@ class LDAPRequester():
 
         except ldap3.core.exceptions.LDAPAttributeError as e:
             self._logger.critical(e)
-            sys.exit(-1)
+            raise Exception(e)
 
         if not results:
             self._logger.debug('Query returned an empty result')
@@ -510,14 +528,15 @@ class LDAPRequester():
             ads_path = kwargs.get('ads_path', None)
             ads_prefix = kwargs.get('ads_prefix', None)
             if (not instance._ldap_connection) or \
-               (queried_domain and queried_domain != instance._queried_domain) or \
-               (ads_path and ads_path != instance._ads_path) or \
-               (ads_prefix and ads_prefix != instance._ads_prefix):
+                    (queried_domain and queried_domain != instance._queried_domain) or \
+                    (ads_path and ads_path != instance._ads_path) or \
+                    (ads_prefix and ads_prefix != instance._ads_prefix):
                 if instance._ldap_connection:
                     instance._ldap_connection.unbind()
                 instance._create_ldap_connection(queried_domain=queried_domain,
                                                  ads_path=ads_path, ads_prefix=ads_prefix)
             return f(*args, **kwargs)
+
         return wrapper
 
     def __enter__(self):
@@ -531,6 +550,7 @@ class LDAPRequester():
             self._logger.warning('Error when unbinding')
             pass
         self._ldap_connection = None
+
 
 class RPCRequester():
     def __init__(self, target_computer, domain=str(), user=(), password=str(),
@@ -607,8 +627,9 @@ class RPCRequester():
             i_interface = self._dcom.CoCreateInstanceEx(wmi.CLSID_WbemLevel1Login,
                                                         wmi.IID_IWbemLevel1Login)
             i_wbem_level1_login = wmi.IWbemLevel1Login(i_interface)
-            self._wmi_connection = i_wbem_level1_login.NTLMLogin(ntpath.join('\\\\{}\\'.format(self._target_computer), self._namespace),
-                                                                 NULL, NULL)
+            self._wmi_connection = i_wbem_level1_login.NTLMLogin(
+                ntpath.join('\\\\{}\\'.format(self._target_computer), self._namespace),
+                NULL, NULL)
             if self._rpc_auth_level == 'privacy':
                 self._wmi_connection.get_dce_rpc().set_auth_level(RPC_C_AUTHN_LEVEL_PKT_PRIVACY)
             elif self._rpc_auth_level == 'integrity':
@@ -626,7 +647,9 @@ class RPCRequester():
                 if instance._rpc_connection is None:
                     return None
                 return f(*args, **kwargs)
+
             return wrapper
+
         return decorator
 
     @staticmethod
@@ -640,7 +663,9 @@ class RPCRequester():
                 if instance._dcom is None:
                     return None
                 return f(*args, **kwargs)
+
             return wrapper
+
         return decorator
 
     def __enter__(self):
@@ -654,6 +679,7 @@ class RPCRequester():
         except AttributeError:
             pass
         self._rpc_connection = None
+
 
 class LDAPRPCRequester(LDAPRequester, RPCRequester):
     def __init__(self, target_computer, domain=str(), user=str(), password=str(),
@@ -692,4 +718,3 @@ class LDAPRPCRequester(LDAPRequester, RPCRequester):
     def __exit__(self, type, value, traceback):
         LDAPRequester.__exit__(self, type, value, traceback)
         RPCRequester.__exit__(self, type, value, traceback)
-

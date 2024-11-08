@@ -16,42 +16,44 @@
 # Yannick Méheut [yannick (at) meheut (dot) org] - Copyright © 2023
 
 from datetime import datetime, timedelta
-from impacket.dcerpc.v5.ndr import NULL
-from impacket.dcerpc.v5 import wkst, srvs, samr
-from impacket.dcerpc.v5.samr import DCERPCSessionError
-from impacket.dcerpc.v5.rpcrt import DCERPCException
-from impacket.dcerpc.v5.dcom.wmi import WBEM_FLAG_FORWARD_ONLY
-from bs4 import BeautifulSoup
-from ldap3.utils.conv import escape_filter_chars
-from ldap3.protocol.microsoft import security_descriptor_control
-from ldap3.protocol.formatters.formatters import *
-from impacket.ldap.ldaptypes import ACE, ACCESS_ALLOWED_OBJECT_ACE, ACCESS_MASK, LDAP_SID, SR_SECURITY_DESCRIPTOR
 
-from pywerview.requester import LDAPRPCRequester
+from bs4 import BeautifulSoup
+from impacket.dcerpc.v5 import wkst, srvs, samr
+from impacket.dcerpc.v5.dcom.wmi import WBEM_FLAG_FORWARD_ONLY
+from impacket.dcerpc.v5.ndr import NULL
+from impacket.dcerpc.v5.rpcrt import DCERPCException
+from impacket.dcerpc.v5.samr import DCERPCSessionError
+from impacket.ldap.ldaptypes import SR_SECURITY_DESCRIPTOR
+from ldap3.protocol.formatters.formatters import *
+from ldap3.protocol.microsoft import security_descriptor_control
+from ldap3.utils.conv import escape_filter_chars
+
+import pywerview.formatters as fmt
 import pywerview.objects.adobjects as adobj
 import pywerview.objects.rpcobjects as rpcobj
-import pywerview.functions.misc
-import pywerview.formatters as fmt
+from pywerview.requester import LDAPRPCRequester
+
 
 class NetRequester(LDAPRPCRequester):
     @LDAPRPCRequester._ldap_connection_init
     def get_adobject(self, queried_domain=str(), queried_sid=str(),
                      queried_name=str(), queried_sam_account_name=str(),
-                     ads_path=str(), attributes=list(), custom_filter=str()):
+                     ads_path=str(), attributes=tuple(), custom_filter=str()):
         for attr_desc, attr_value in (('objectSid', queried_sid), ('name', escape_filter_chars(queried_name)),
                                       ('samAccountName', escape_filter_chars(queried_sam_account_name))):
             if attr_value:
                 object_filter = '(&({}={}){})'.format(attr_desc, attr_value, custom_filter)
                 break
         else:
+            if not custom_filter:
+                raise Exception(f"empty filter")
             object_filter = '(&(name=*){})'.format(custom_filter)
-
         return self._ldap_search(object_filter, adobj.ADObject, attributes=attributes)
- 
+
     @LDAPRPCRequester._ldap_connection_init
     def get_objectowner(self, queried_domain=str(), queried_sid=str(),
-                     queried_name=str(), queried_sam_account_name=str(),
-                     ads_path=str(), custom_filter=str(), resolve_sids=False):
+                        queried_name=str(), queried_sam_account_name=str(),
+                        ads_path=str(), custom_filter=str(), resolve_sids=False):
         for attr_desc, attr_value in (('objectSid', queried_sid), ('name', escape_filter_chars(queried_name)),
                                       ('samAccountName', escape_filter_chars(queried_sam_account_name))):
             if attr_value:
@@ -60,7 +62,7 @@ class NetRequester(LDAPRPCRequester):
         else:
             object_filter = '(&(name=*){})'.format(custom_filter)
 
-        attributes = ['ntsecuritydescriptor','distinguishedname']
+        attributes = ['ntsecuritydescriptor', 'distinguishedname']
 
         # The control is used to get access to ntSecurityDescriptor with an
         # unprivileged user, see https://stackoverflow.com/questions/40771503/selecting-the-ad-ntsecuritydescriptor-attribute-as-a-non-admin/40773088
@@ -88,7 +90,7 @@ class NetRequester(LDAPRPCRequester):
                     self._logger.warning('SID ({}) is not a well known or already resolved SID'.format(sid))
                     try:
                         resolved_sid = self.get_adobject(queried_sid=sid, queried_domain=self._queried_domain,
-                                                        attributes=['distinguishedname'])[0].distinguishedname
+                                                         attributes=['distinguishedname'])[0].distinguishedname
                     except IndexError:
                         self._logger.warning('We did not manage to resolve this SID ({}) against the DC'.format(sid))
                         resolved_sid = sid
@@ -103,15 +105,15 @@ class NetRequester(LDAPRPCRequester):
 
     @LDAPRPCRequester._ldap_connection_init
     def get_netgmsa(self, queried_domain=str(), queried_sid=str(),
-                     queried_name=str(), queried_sam_account_name=str(),
-                     ads_path=str(), resolve_sids=False):
+                    queried_name=str(), queried_sam_account_name=str(),
+                    ads_path=str(), resolve_sids=False):
         filter_objectclass = '(ObjectClass=msDS-GroupManagedServiceAccount)'
         attributes = ['samaccountname', 'distinguishedname', 'objectsid', 'description',
                       'msds-managedpassword', 'msds-groupmsamembership', 'useraccountcontrol']
 
         if not self._ldap_connection.server.ssl:
-            self._logger.warning('LDAP connection is not encrypted, we can\'t ask '\
-                    'for msds-managedpassword, removing from list of attributes')
+            self._logger.warning('LDAP connection is not encrypted, we can\'t ask ' \
+                                 'for msds-managedpassword, removing from list of attributes')
             attributes.remove('msds-managedpassword')
 
         for attr_desc, attr_value in (('objectSid', queried_sid), ('name', escape_filter_chars(queried_name)),
@@ -130,8 +132,8 @@ class NetRequester(LDAPRPCRequester):
                 results = list()
                 for sid in getattr(adserviceaccount, 'msds-groupmsamembership'):
                     try:
-                        resolved_sid = self.get_adobject(queried_sid=sid, queried_domain=self._queried_domain, 
-                                                                  attributes=['distinguishedname'])[0].distinguishedname
+                        resolved_sid = self.get_adobject(queried_sid=sid, queried_domain=self._queried_domain,
+                                                         attributes=['distinguishedname'])[0].distinguishedname
                     except IndexError:
                         self._logger.warning('We did not manage to resolve this SID ({}) against the DC'.format(sid))
                         resolved_sid = sid
@@ -144,8 +146,8 @@ class NetRequester(LDAPRPCRequester):
 
     @LDAPRPCRequester._ldap_connection_init
     def get_netsmsa(self, queried_domain=str(), queried_sid=str(),
-                     queried_name=str(), queried_sam_account_name=str(),
-                     ads_path=str()):
+                    queried_name=str(), queried_sam_account_name=str(),
+                    ads_path=str()):
 
         filter_objectclass = '(ObjectClass=msDS-ManagedServiceAccount)'
         attributes = ['samaccountname', 'distinguishedname', 'objectsid', 'description',
@@ -169,9 +171,9 @@ class NetRequester(LDAPRPCRequester):
 
     @LDAPRPCRequester._ldap_connection_init
     def get_objectacl(self, queried_domain=str(), queried_sid=str(),
-                     queried_name=str(), queried_sam_account_name=str(),
-                     ads_path=str(), sacl=False, rights_filter=str(),
-                     resolve_sids=False, resolve_guids=False, custom_filter=str()):
+                      queried_name=str(), queried_sam_account_name=str(),
+                      ads_path=str(), sacl=False, rights_filter=str(),
+                      resolve_sids=False, resolve_guids=False, custom_filter=str()):
         for attr_desc, attr_value in (('objectSid', queried_sid), ('name', escape_filter_chars(queried_name)),
                                       ('samAccountName', escape_filter_chars(queried_sam_account_name))):
             if attr_value:
@@ -188,12 +190,13 @@ class NetRequester(LDAPRPCRequester):
             base_dn = ','.join(self._base_dn.split(',')[-len_base_dn:])
             guid_map = {'{00000000-0000-0000-0000-000000000000}': 'All'}
             for o in self.get_adobject(ads_path='CN=Schema,CN=Configuration,{}'.format(base_dn),
-                    attributes=['name', 'schemaIDGUID'], custom_filter='(schemaIDGUID=*)'):
-                        guid_map['{}'.format(format_uuid_le(o.schemaidguid))] = o.name
+                                       attributes=['name', 'schemaIDGUID'], custom_filter='(schemaIDGUID=*)'):
+                guid_map['{}'.format(format_uuid_le(o.schemaidguid))] = o.name
 
             for o in self.get_adobject(ads_path='CN=Extended-Rights,CN=Configuration,{}'.format(base_dn),
-                    attributes=['name', 'rightsGuid'], custom_filter='(objectClass=controlAccessRight)'):
-                        guid_map['{{{}}}'.format(o.rightsguid.lower())] = o.name
+                                       attributes=['name', 'rightsGuid'],
+                                       custom_filter='(objectClass=controlAccessRight)'):
+                guid_map['{{{}}}'.format(o.rightsguid.lower())] = o.name
             self._base_dn = base_dn
 
         attributes = ['distinguishedname', 'objectsid', 'ntsecuritydescriptor']
@@ -209,14 +212,14 @@ class NetRequester(LDAPRPCRequester):
             acl_type = 'Dacl'
 
         security_descriptors = self._ldap_search(object_filter, adobj.ADObject,
-                attributes=attributes, controls=controls)
+                                                 attributes=attributes, controls=controls)
 
         acl = list()
 
         rights_to_guid = {'reset-password': '{00299570-246d-11d0-a768-00aa006e0529}',
-                'write-members': '{bf9679c0-0de6-11d0-a285-00aa003049e2}',
-                'allowed-to-authenticate':'{68b1d179-0d15-4d4f-ab71-46152e79a7bc}',
-                'all': '{00000000-0000-0000-0000-000000000000}'}
+                          'write-members': '{bf9679c0-0de6-11d0-a285-00aa003049e2}',
+                          'allowed-to-authenticate': '{68b1d179-0d15-4d4f-ab71-46152e79a7bc}',
+                          'all': '{00000000-0000-0000-0000-000000000000}'}
         guid_filter = rights_to_guid.get(rights_filter, None)
 
         if resolve_sids:
@@ -231,7 +234,8 @@ class NetRequester(LDAPRPCRequester):
             for ace in sd[acl_type]['Data']:
                 if guid_filter:
                     try:
-                        object_type = format_uuid_le(ace['Ace']['ObjectType']) if ace['Ace']['ObjectType'] else '{00000000-0000-0000-0000-000000000000}'
+                        object_type = format_uuid_le(ace['Ace']['ObjectType']) if ace['Ace'][
+                            'ObjectType'] else '{00000000-0000-0000-0000-000000000000}'
                     except KeyError:
                         continue
                     if object_type != guid_filter:
@@ -253,10 +257,13 @@ class NetRequester(LDAPRPCRequester):
                     except KeyError:
                         try:
                             resolved_sid = self.get_adobject(queried_sid=converted_sid,
-                                    queried_domain=self._queried_domain, ads_path=self._base_dn, attributes=['distinguishedname'])[0]
+                                                             queried_domain=self._queried_domain,
+                                                             ads_path=self._base_dn, attributes=['distinguishedname'])[
+                                0]
                             resolved_sid = resolved_sid.distinguishedname
                         except IndexError:
-                            self._logger.warning('We did not manage to resolve this SID ({}) against the DC'.format(converted_sid))
+                            self._logger.warning(
+                                'We did not manage to resolve this SID ({}) against the DC'.format(converted_sid))
                             resolved_sid = attributes['securityidentifier']
                     finally:
                         sid_mapping[converted_sid] = resolved_sid
@@ -266,12 +273,14 @@ class NetRequester(LDAPRPCRequester):
                 except KeyError:
                     pass
                 try:
-                    attributes['objectacetype'] = format_uuid_le(ace['Ace']['ObjectType']) if ace['Ace']['ObjectType'] else '{00000000-0000-0000-0000-000000000000}'
+                    attributes['objectacetype'] = format_uuid_le(ace['Ace']['ObjectType']) if ace['Ace'][
+                        'ObjectType'] else '{00000000-0000-0000-0000-000000000000}'
                     attributes['objectacetype'] = guid_map[attributes['objectacetype']]
                 except KeyError:
                     pass
                 try:
-                    attributes['inheritedobjectacetype'] = format_uuid_le(ace['Ace']['InheritedObjectType']) if ace['Ace']['InheritedObjectType'] else '{00000000-0000-0000-0000-000000000000}'
+                    attributes['inheritedobjectacetype'] = format_uuid_le(ace['Ace']['InheritedObjectType']) if \
+                    ace['Ace']['InheritedObjectType'] else '{00000000-0000-0000-0000-000000000000}'
                     attributes['inheritedobjectacetype'] = guid_map[attributes['inheritedobjectacetype']]
                 except KeyError:
                     pass
@@ -378,16 +387,16 @@ class NetRequester(LDAPRPCRequester):
                 group_search_filter += '(name={})'.format(queried_groupname)
 
             if full_data:
-                attributes=list()
+                attributes = list()
             else:
-                attributes=['samaccountname']
+                attributes = ['samaccountname']
 
             group_search_filter = '(&{})'.format(group_search_filter)
             return self._ldap_search(group_search_filter, adobj.Group, attributes=attributes)
 
     @LDAPRPCRequester._ldap_connection_init
     def get_netcomputer(self, queried_computername=str(), queried_spn=str(),
-                        queried_os=str(), queried_sp=str(), queried_domain=str(), ads_path=str(), 
+                        queried_os=str(), queried_sp=str(), queried_domain=str(), ads_path=str(),
                         printers=False, unconstrained=False, laps_passwords=False, pre_created=False,
                         ping=False, full_data=False, custom_filter=str(), attributes=[]):
 
@@ -405,16 +414,16 @@ class NetRequester(LDAPRPCRequester):
 
         computer_search_filter = '(samAccountType=805306369){}'.format(custom_filter)
         for (attr_desc, attr_value) in (('servicePrincipalName', queried_spn),
-                ('operatingSystem', queried_os), ('operatingsystemservicepack', queried_sp),
-                ('dnsHostName', queried_computername)):
+                                        ('operatingSystem', queried_os), ('operatingsystemservicepack', queried_sp),
+                                        ('dnsHostName', queried_computername)):
             if attr_value:
                 computer_search_filter += '({}={})'.format(attr_desc, attr_value)
 
         if full_data:
-            attributes=list()
+            attributes = list()
         else:
             if not attributes:
-                attributes=['samaccountname', 'dnsHostName']
+                attributes = ['samaccountname', 'dnsHostName']
             if laps_passwords:
                 attributes.append('ms-mcs-AdmPwd')
 
@@ -431,7 +440,7 @@ class NetRequester(LDAPRPCRequester):
                                     custom_filter=domain_controller_filter)
 
     @LDAPRPCRequester._ldap_connection_init
-    def get_netfileserver(self, queried_domain=str(), target_users=list()):
+    def get_netfileserver(self, queried_domain=str(), target_users=tuple()):
 
         def split_path(path):
             split_path = path.split('\\')
@@ -444,10 +453,10 @@ class NetRequester(LDAPRPCRequester):
             users = list()
             for target_user in target_users:
                 users += self.get_netuser(target_user, queried_domain,
-                        attributes=file_server_attributes)
+                                          attributes=file_server_attributes)
         else:
             users = self.get_netuser(queried_domain=queried_domain,
-                    attributes=file_server_attributes)
+                                     attributes=file_server_attributes)
 
         for user in users:
             for full_path in (user.homedirectory, user.scriptpath, user.profilepath):
@@ -472,14 +481,14 @@ class NetRequester(LDAPRPCRequester):
             dfs_search_filter = '(objectClass=fTDfs)'
 
             intermediate_results = self._ldap_search(dfs_search_filter, adobj.ADObject,
-                                                attributes=['remoteservername', 'name'])
+                                                     attributes=['remoteservername', 'name'])
             results = list()
             for dfs in intermediate_results:
                 for remote_server in dfs.remoteservername:
                     remote_server = str(remote_server)
                     if '\\' in remote_server:
                         attributes = {'name': dfs.name,
-                                'remoteservername': remote_server.split('\\')[2]}
+                                      'remoteservername': remote_server.split('\\')[2]}
                         results.append(adobj.DFS(attributes))
 
             return results
@@ -488,7 +497,7 @@ class NetRequester(LDAPRPCRequester):
             dfs_search_filter = '(objectClass=msDFS-Linkv2)'
 
             intermediate_results = self._ldap_search(dfs_search_filter, adobj.ADObject,
-                                                attributes=['msdfs-linkpathv2','msDFS-TargetListv2'])
+                                                     attributes=['msdfs-linkpathv2', 'msDFS-TargetListv2'])
             results = list()
             for dfs in intermediate_results:
                 attributes = list()
@@ -501,7 +510,7 @@ class NetRequester(LDAPRPCRequester):
                     if '\\' in target.string:
                         server_name, dfs_root = target.string.split('\\')[2:4]
                         attributes = {'name': '{}{}'.format(dfs_root, share_name),
-                                'remoteservername': server_name}
+                                      'remoteservername': server_name}
 
                 results.append(adobj.DFS(attributes))
 
@@ -595,15 +604,17 @@ class NetRequester(LDAPRPCRequester):
 
                 # `--groupname` option is missing, falling back to the "Domain Admins"
                 else:
-                    self._logger.debug('No groupname provided, falling back to the "Domain Admins"'.format(queried_groupname))
+                    self._logger.debug(
+                        'No groupname provided, falling back to the "Domain Admins"'.format(queried_groupname))
                     if _sid:
                         queried_sid = _sid
                     else:
                         # Logic extract from pywerview.functions.Misc get_domainsid to save object creation
                         # LDAP filter to extract DC
                         domain_controller_filter = '(userAccountControl:1.2.840.113556.1.4.803:=8192)'
-                        domain_controllers = self.get_netcomputer(queried_domain=queried_domain, custom_filter=domain_controller_filter,
-                                                                attributes=['objectsid'])
+                        domain_controllers = self.get_netcomputer(queried_domain=queried_domain,
+                                                                  custom_filter=domain_controller_filter,
+                                                                  attributes=['objectsid'])
                         if domain_controllers:
                             primary_dc = domain_controllers[0]
                             domain_sid = primary_dc.objectsid
@@ -613,7 +624,8 @@ class NetRequester(LDAPRPCRequester):
                             queried_sid = domain_sid + '-512'
                             self._logger.debug('Found Domains Admins SID = {}'.format(queried_sid))
                         else:
-                            self._logger.critical('We did not manage to retrieve domain controller, please specify a group name')
+                            self._logger.critical(
+                                'We did not manage to retrieve domain controller, please specify a group name')
                             return list()
 
                     groups = self.get_netgroup(queried_sid=queried_sid,
@@ -627,7 +639,8 @@ class NetRequester(LDAPRPCRequester):
             for group in groups:
                 members = list()
                 if recurse and use_matching_rule:
-                    group_memberof_filter = '(&(samAccountType=805306368)(memberof:1.2.840.113556.1.4.1941:={}){})'.format(group.distinguishedname, custom_filter)
+                    group_memberof_filter = '(&(samAccountType=805306368)(memberof:1.2.840.113556.1.4.1941:={}){})'.format(
+                        group.distinguishedname, custom_filter)
 
                     members = self.get_netuser(custom_filter=group_memberof_filter,
                                                queried_domain=self._queried_domain)
@@ -655,7 +668,8 @@ class NetRequester(LDAPRPCRequester):
                     try:
                         member_domain = member_dn[member_dn.index('DC='):].replace('DC=', '').replace(',', '.')
                     except IndexError:
-                        self._logger.warning('Exception was raised while handling member_dn, falling back to empty string')
+                        self._logger.warning(
+                            'Exception was raised while handling member_dn, falling back to empty string')
                         member_domain = str()
 
                     # https://serverfault.com/questions/788888/what-does-an-alias-group-means-in-sid-context
@@ -671,7 +685,8 @@ class NetRequester(LDAPRPCRequester):
                     attributes['memberdomain'] = member_domain
                     if is_group:
                         attributes['useraccountcontrol'] = str()
-                        self._logger.debug('{0} is a {1}, ignoring the useraccountcontrol'.format(member.samaccountname, member.samaccounttype))
+                        self._logger.debug('{0} is a {1}, ignoring the useraccountcontrol'.format(member.samaccountname,
+                                                                                                  member.samaccounttype))
                     else:
                         attributes['useraccountcontrol'] = member.useraccountcontrol
                     attributes['isgroup'] = is_group
@@ -702,11 +717,11 @@ class NetRequester(LDAPRPCRequester):
     def get_netdomaintrust(self, queried_domain, full_data=False):
 
         if full_data:
-            attributes=list()
+            attributes = list()
         else:
-            attributes=['trustpartner', 'trustdirection',
-                        'whencreated', 'whenchanged',
-                        'trusttype', 'trustattributes']
+            attributes = ['trustpartner', 'trustdirection',
+                          'whencreated', 'whenchanged',
+                          'trusttype', 'trustattributes']
 
         trust_search_filter = '(&(objectClass=trustedDomain))'
 
@@ -809,7 +824,7 @@ class NetRequester(LDAPRPCRequester):
                 groups = list()
                 while True:
                     resp = samr.hSamrEnumerateAliasesInDomain(self._rpc_connection, domain_handle,
-                            enumerationContext=enumeration_context)
+                                                              enumerationContext=enumeration_context)
                     groups += resp['Buffer']['Buffer']
 
                     enumeration_context = resp['EnumerationContext']
@@ -860,7 +875,8 @@ class NetRequester(LDAPRPCRequester):
 
             # We get a handle on the group, and list its members
             try:
-                group = samr.hSamrOpenAlias(self._rpc_connection, queried_group_domain_handle, aliasId=queried_group_rid)
+                group = samr.hSamrOpenAlias(self._rpc_connection, queried_group_domain_handle,
+                                            aliasId=queried_group_rid)
                 resp = samr.hSamrGetMembersInAlias(self._rpc_connection, group['AliasHandle'])
             except DCERPCSessionError:
                 raise ValueError('The name \'{}\' is not a valid group on the target server'.format(queried_groupname))
@@ -907,7 +923,8 @@ class NetRequester(LDAPRPCRequester):
                             except AttributeError:
                                 # Here, the member is a foreign security principal
                                 # TODO: resolve it properly
-                                self._logger.warning('The member is a foreign security principal, SID will not be resolved')
+                                self._logger.warning(
+                                    'The member is a foreign security principal, SID will not be resolved')
                                 attributes['name'] = '{}\\{}'.format(member_domain, ad_object.objectsid)
                             attributes['isgroup'] = 'group' in ad_object.objectclass
                             try:
@@ -917,7 +934,8 @@ class NetRequester(LDAPRPCRequester):
                                 attributes['lastlogon'] = str()
                         except IndexError:
                             # We did not manage to resolve this SID against the DC
-                            self._logger.warning('We did not manage to resolve this SID ({}) against the DC'.format(member_sid))
+                            self._logger.warning(
+                                'We did not manage to resolve this SID ({}) against the DC'.format(member_sid))
                             attributes['isdomain'] = False
                             attributes['isgroup'] = False
                             attributes['name'] = attributes['sid']
@@ -931,8 +949,10 @@ class NetRequester(LDAPRPCRequester):
 
                 # If we recurse and the member is a domain group, we query every member
                 # TODO: implement check on self._domain_controller here?
-                if self._ldap_connection and self._domain_controller and recurse and attributes['isdomain'] and attributes['isgroup']:
-                    for domain_member in self.get_netgroupmember(full_data=True, recurse=True, queried_sid=attributes['sid']):
+                if self._ldap_connection and self._domain_controller and recurse and attributes['isdomain'] and \
+                        attributes['isgroup']:
+                    for domain_member in self.get_netgroupmember(full_data=True, recurse=True,
+                                                                 queried_sid=attributes['sid']):
                         domain_member_attributes = dict()
                         domain_member_attributes['isdomain'] = True
                         member_dn = domain_member.distinguishedname
@@ -989,7 +1009,7 @@ class NetRequester(LDAPRPCRequester):
         else:
             where_clause = '(EventCode=4624 OR EventCode=4768)'
 
-        wmi_enum_event = self._wmi_connection.ExecQuery('SELECT * from Win32_NTLogEvent where {}'\
+        wmi_enum_event = self._wmi_connection.ExecQuery('SELECT * from Win32_NTLogEvent where {}' \
                                                         'and TimeGenerated >= \'{}\''.format(where_clause, limit_date),
                                                         lFlags=WBEM_FLAG_FORWARD_ONLY)
         while True:
@@ -1005,7 +1025,7 @@ class NetRequester(LDAPRPCRequester):
                     domain = wmi_event_info[6]
                     address = wmi_event_info[18]
                     if logon_type not in [2, 3] or user.endswith('$') \
-                       or (user.lower == 'anonymous logon'):
+                            or (user.lower == 'anonymous logon'):
                         continue
                 else:
                     logon_type = str()
@@ -1027,4 +1047,3 @@ class NetRequester(LDAPRPCRequester):
                     raise e
                 else:
                     break
-

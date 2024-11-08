@@ -85,7 +85,7 @@ def main():
     # Hunter parser, used for hunting functions
     hunter_parser = argparse.ArgumentParser(add_help=False)
     hunter_parser.add_argument('--computername', dest='queried_computername',
-            nargs='+', default=list(), help='Host to enumerate against')
+            nargs='+', default=tuple(), help='Host to enumerate against')
     hunter_parser.add_argument('--computerfile', dest='queried_computerfile',
             type=argparse.FileType('r'), help='File of hostnames/IPs to search')
     hunter_parser.add_argument('--computer-filter', dest='queried_computerfilter',
@@ -583,7 +583,7 @@ def main():
             'for processes with specific name, or ran by specific users',
             parents=[ad_parser, hunter_parser, json_output_parser, logging_parser])
     invoke_processhunter_parser.add_argument('--processname', dest='queried_processname',
-            nargs='+', default=list(), help='Names of the process to hunt')
+            nargs='+', default=tuple(), help='Names of the process to hunt')
     invoke_processhunter_parser.add_argument('--stop-on-success', action='store_true',
             help='Stop hunting after finding target')
     invoke_processhunter_parser.add_argument('--show-all', action='store_true',

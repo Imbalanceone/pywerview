@@ -43,7 +43,7 @@ class Hunter(NetRequester):
         self._queried_domain = queried_domain
         self._target_domains = [self._queried_domain]
 
-    def _build_target_computers(self, queried_computername=list(), queried_computerfile=None,
+    def _build_target_computers(self, queried_computername=tuple(), queried_computerfile=None,
                                 queried_computerfilter=str(), queried_computeradspath=str(),
                                 unconstrained=False, stealth=False,
                                 stealth_source=['dfs', 'dc', 'file']):
@@ -191,7 +191,7 @@ class Hunter(NetRequester):
                 worker.terminate()
 
 class UserHunter(Hunter):
-    def invoke_userhunter(self, queried_computername=list(), queried_computerfile=None,
+    def invoke_userhunter(self, queried_computername=tuple(), queried_computerfile=None,
             queried_computerfilter=str(), queried_computeradspath=str(),
             unconstrained=False, queried_groupname=str(), target_server=str(),
             queried_username=str(), queried_userfilter=str(), queried_useradspath=str(),
@@ -239,9 +239,9 @@ class UserHunter(Hunter):
         return self._process_workers()
 
 class ProcessHunter(Hunter):
-    def invoke_processhunter(self, queried_computername=list(), queried_computerfile=None,
+    def invoke_processhunter(self, queried_computername=tuple(), queried_computerfile=None,
             queried_computerfilter=str(), queried_computeradspath=str(),
-            queried_processname=list(), queried_groupname=str(), target_server=str(),
+            queried_processname=tuple(), queried_groupname=str(), target_server=str(),
             queried_username=str(), queried_userfilter=str(), queried_useradspath=str(),
             queried_userfile=None, threads=1, stop_on_success=False, queried_domain=str(),
             show_all=False):
@@ -275,7 +275,7 @@ class ProcessHunter(Hunter):
         return self._process_workers()
 
 class EventHunter(Hunter):
-    def invoke_eventhunter(self, queried_computername=list(), queried_computerfile=None,
+    def invoke_eventhunter(self, queried_computername=tuple(), queried_computerfile=None,
                            queried_computerfilter=str(), queried_computeradspath=str(),
                            queried_groupname=str(), target_server=str(), queried_username=str(),
                            queried_useradspath=str(), queried_userfilter=str(),

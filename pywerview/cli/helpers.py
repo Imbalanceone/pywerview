@@ -26,7 +26,7 @@ def get_adobject(domain_controller, domain, user, password=str(),
                 lmhash=str(), nthash=str(), do_kerberos=False, do_tls=False,
                 user_cert=str(), user_key=str(),
                 queried_domain=str(), queried_sid=str(), queried_name=str(),
-                queried_sam_account_name=str(), ads_path=str(), attributes=list(),
+                queried_sam_account_name=str(), ads_path=str(), attributes=tuple(),
                 custom_filter=str()):
     requester = NetRequester(domain_controller, domain, user, password,
                                  lmhash, nthash, do_kerberos, do_tls,
@@ -151,7 +151,7 @@ def get_netdomaincontroller(domain_controller, domain, user, password=str(),
 def get_netfileserver(domain_controller, domain, user, password=str(),
                                  lmhash=str(), nthash=str(), do_kerberos=False,
                                  user_cert=str(), user_key=str(), 
-                                 do_tls=False, queried_domain=str(), target_users=list()):
+                                 do_tls=False, queried_domain=str(), target_users=tuple()):
     requester = NetRequester(domain_controller, domain, user, password,
                                  lmhash, nthash, do_kerberos, do_tls,
                                  user_cert, user_key)
@@ -361,7 +361,7 @@ def invoke_checklocaladminaccess(target_computername, domain, user, password=str
 
 def invoke_userhunter(domain_controller, domain, user, password=str(),
                       lmhash=str(), nthash=str(), do_kerberos=False, do_tls=False,
-                      queried_computername=list(), queried_computerfile=None,
+                      queried_computername=tuple(), queried_computerfile=None,
                       queried_computerfilter=str(), queried_computeradspath=str(),
                       unconstrained=False, queried_groupname=str(), target_server=str(),
                       queried_username=str(), queried_useradspath=str(),
@@ -388,9 +388,9 @@ def invoke_userhunter(domain_controller, domain, user, password=str(),
 
 def invoke_processhunter(domain_controller, domain, user, password=str(),
                          lmhash=str(), nthash=str(), do_kerberos=False, do_tls=False,
-                         queried_computername=list(), queried_computerfile=None,
+                         queried_computername=tuple(), queried_computerfile=None,
                          queried_computerfilter=str(), queried_computeradspath=str(),
-                         queried_processname=list(), queried_groupname=str(), target_server=str(),
+                         queried_processname=tuple(), queried_groupname=str(), target_server=str(),
                          queried_username=str(), queried_useradspath=str(),
                          queried_userfilter=str(), queried_userfile=None, threads=1,
                          stop_on_success=False, queried_domain=str(), show_all=False):
@@ -411,7 +411,7 @@ def invoke_processhunter(domain_controller, domain, user, password=str(),
 
 def invoke_eventhunter(domain_controller, domain, user, password=str(),
                        lmhash=str(), nthash=str(), do_kerberos=False, do_tls=False,
-                       queried_computername=list(), queried_computerfile=None,
+                       queried_computername=tuple(), queried_computerfile=None,
                        queried_computerfilter=str(), queried_computeradspath=str(),
                        queried_groupname=str(), target_server=str(), queried_username=str(),
                        queried_useradspath=str(), queried_userfilter=str(),

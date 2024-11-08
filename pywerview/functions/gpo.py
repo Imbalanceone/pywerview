@@ -445,7 +445,7 @@ class GPORequester(LDAPRequester):
         elif queried_localgroup.upper().startswith('S-1-5'):
             local_sid = queried_localgroup
         else:
-            raise ValueError('The queried local group must be in \'Administrators\', ' \
+            raise ValueError('The queried local group must be in \'Administrators\', '
                     '\'RDP\', or a \'S-1-5\' type SID')
 
         object_groups = net_requester.get_netgroup(queried_username=object_sam_account_name,
