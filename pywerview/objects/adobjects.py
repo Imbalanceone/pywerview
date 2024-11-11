@@ -15,12 +15,8 @@
 
 # Yannick Méheut [yannick (at) meheut (dot) org] - Copyright © 2023
 
-import inspect
 import logging
 
-from impacket.ldap.ldaptypes import ACE, ACCESS_ALLOWED_OBJECT_ACE, ACCESS_MASK, LDAP_SID, SR_SECURITY_DESCRIPTOR
-
-import pywerview.functions.misc as misc
 
 class ADObject:
     _well_known_sids = {'S-1-0-0': 'Nobody', 'S-1-0': 'Null Authority', 'S-1-1-0': 'Everyone',
@@ -31,7 +27,7 @@ class ADObject:
                         'S-1-5-11': 'Authenticated Users', 'S-1-5-12': 'Restricted Code', 'S-1-5-13': 'Terminal Server Users',
                         'S-1-5-14': 'Remote Interactive Logon', 'S-1-5-17': 'This Organization', 'S-1-5-18': 'Local System',
                         'S-1-5-19': 'NT Authority', 'S-1-5-1': 'Dialup', 'S-1-5-20': 'NT Authority', 'S-1-5-2': 'Network',
-                        'S-1-5-32-544': 'Administrators' ,'S-1-5-32-546': 'Guests', 'S-1-5-32-547': 'Power Users',
+                        'S-1-5-32-544': 'Administrators', 'S-1-5-32-546': 'Guests', 'S-1-5-32-547': 'Power Users',
                         'S-1-5-32-548': 'Account Operators', 'S-1-5-32-549': 'Server Operators',
                         'S-1-5-32-550': 'Print Operators', 'S-1-5-32-551': 'Backup Operators', 'S-1-5-32-552': 'Replicators',
                         'S-1-5-32-554': 'Builtin\\Pre-Windows 2000 Compatible Access',
@@ -60,11 +56,11 @@ class ADObject:
                         'S-1-5-80': 'NT Service', 'S-1-5-8': 'Proxy', 'S-1-5-9': 'Enterprise Domain Controllers',
                         'S-1-5': 'NT Authority'}
 
-    _well_known_rids = { '498' : 'Enterprise Read-only Domain Controllers',
-                         '512' : 'Domain Admins', '513' : 'Domain Users', '514' : 'Domain Guests', '515' : 'Domain Computers',
-                         '516' : 'Domain Controllers', '517' : 'Cert Publishers', '519' : 'Enterprise Admins',
-                         '520' : 'Group Policy Creator Owners', '522' : 'Cloneable Domain COntrollers', '526' : 'Key Admins',
-                         '527' : 'Enterptise Key Admins', '553' : 'RAS and IAS Servers'}
+    _well_known_rids = {'498': 'Enterprise Read-only Domain Controllers',
+                        '512': 'Domain Admins', '513': 'Domain Users', '514': 'Domain Guests', '515': 'Domain Computers',
+                        '516': 'Domain Controllers', '517': 'Cert Publishers', '519': 'Enterprise Admins',
+                        '520': 'Group Policy Creator Owners', '522': 'Cloneable Domain COntrollers', '526': 'Key Admins',
+                        '527': 'Enterptise Key Admins', '553': 'RAS and IAS Servers'}
 
     def __init__(self, attributes):
         logger = logging.getLogger('pywerview_main_logger.ADObject')
@@ -75,7 +71,7 @@ class ADObject:
         self.add_attributes(attributes)
 
     def add_attributes(self, attributes):
-        self._logger.log(self._logger.ULTRA,'ADObject instancied with the following attributes : {}'.format(attributes))
+        self._logger.log(self._logger.ULTRA, 'ADObject instancied with the following attributes : {}'.format(attributes))
         for attr in attributes:
             self._attributes_dict[attr.lower()] = attributes[attr]
 
@@ -99,7 +95,7 @@ class ADObject:
                 max_length = len(attr)
         for attr in self._attributes_dict:
             attribute = self._attributes_dict[attr]
-            self._logger.log(self._logger.ULTRA,'Trying to print : attribute name = {0} / value = {1}'.format(attr, attribute))
+            self._logger.log(self._logger.ULTRA, 'Trying to print : attribute name = {0} / value = {1}'.format(attr, attribute))
             if isinstance(attribute, list):
                 if any(isinstance(x, bytes) for x in attribute):
                     attribute = ['{}...'.format(x.hex()[:97]) for x in attribute]
@@ -132,6 +128,7 @@ class ADObject:
     def to_json(self):
         return self._attributes_dict
 
+
 class ACE(ADObject):
 
     def __init__(self, attributes):
@@ -140,38 +137,58 @@ class ACE(ADObject):
         # We set iscallback, depending on the type of ACE
         self._attributes_dict['iscallbak'] = ('CALLBACK' in self.acetype)
 
+
 class User(ADObject):
     pass
+
 
 class Group(ADObject):
     pass
 
+
 class Computer(ADObject):
     pass
+
+
+class Template(ADObject):
+    pass
+
+
+class Container(ADObject):
+    pass
+
 
 class FileServer(ADObject):
     pass
 
+
 class DFS(ADObject):
     pass
+
 
 class OU(ADObject):
     pass
 
+
 class Site(ADObject):
     pass
+
 
 class Subnet(ADObject):
     pass
 
+
 class Trust(ADObject):
     pass
+
 
 class GPO(ADObject):
     pass
 
+
 class PSO(ADObject):
     pass
+
 
 class GptTmpl(ADObject):
     def to_json(self):
@@ -180,23 +197,30 @@ class GptTmpl(ADObject):
             json_dict[k] = v.to_json()
         return json_dict
 
+
 class GPOGroup(ADObject):
     pass
+
 
 class Policy(ADObject):
     pass
 
+
 class GPOComputerAdmin(ADObject):
     pass
+
 
 class GPOLocation(ADObject):
     pass
 
+
 class GMSAAccount(ADObject):
     pass
 
+
 class SMSAAccount(ADObject):
     pass
+
 
 class ObjectOwner(ADObject):
     pass

@@ -486,19 +486,22 @@ class LDAPRequester():
         else:
             self._do_ntlm_auth(ldap_scheme, formatter)
 
-    def _ldap_search(self, search_filter, class_result, attributes=tuple(), controls=tuple()):
+    def _ldap_search(self, search_filter, class_result, attributes=tuple(), controls=tuple(),template_dn=None):
         results = list()
 
         # if no attribute name specified, we return all attributes
         if not attributes:
             attributes = ldap3.ALL_ATTRIBUTES
-
-        self._logger.debug('search_base = {0} / search_filter = {1} / attributes = {2}'.format(self._base_dn,
+        if template_dn:
+            base_dn = template_dn+self._base_dn
+        else:
+            base_dn = self._base_dn
+        self._logger.debug('search_base = {0} / search_filter = {1} / attributes = {2}'.format(base_dn,
                                                                                                search_filter,
                                                                                                attributes))
 
         # Microsoft Active Directory set an hard limit of 1000 entries returned by any search
-        search_results = self._ldap_connection.extend.standard.paged_search(search_base=self._base_dn,
+        search_results = self._ldap_connection.extend.standard.paged_search(search_base=base_dn,
                                                                             search_filter=search_filter,
                                                                             attributes=attributes,
                                                                             controls=controls, paged_size=1000,

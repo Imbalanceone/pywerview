@@ -34,6 +34,11 @@ import pywerview.objects.rpcobjects as rpcobj
 from pywerview.requester import LDAPRPCRequester
 
 
+def get_attr_list_filter(sid_list: list[str], attr_name="objectSid") -> str:
+    sid_list_filter_concat = ''.join(tuple(map(lambda sid: f'({attr_name}={sid})', sid_list)))
+    return f'(|{sid_list_filter_concat})'
+
+
 class NetRequester(LDAPRPCRequester):
     @LDAPRPCRequester._ldap_connection_init
     def get_adobject(self, queried_domain=str(), queried_sid=str(),
@@ -41,7 +46,10 @@ class NetRequester(LDAPRPCRequester):
                      ads_path=str(), attributes=tuple(), custom_filter=str()):
         for attr_desc, attr_value in (('objectSid', queried_sid), ('name', escape_filter_chars(queried_name)),
                                       ('samAccountName', escape_filter_chars(queried_sam_account_name))):
-            if attr_value:
+            if isinstance(attr_value, list) and attr_desc == "objectSid":
+                object_filter = f"(&{get_attr_list_filter(attr_value)}{custom_filter})"
+                break
+            elif attr_value:
                 object_filter = '(&({}={}){})'.format(attr_desc, attr_value, custom_filter)
                 break
         else:
@@ -176,6 +184,9 @@ class NetRequester(LDAPRPCRequester):
                       resolve_sids=False, resolve_guids=False, custom_filter=str()):
         for attr_desc, attr_value in (('objectSid', queried_sid), ('name', escape_filter_chars(queried_name)),
                                       ('samAccountName', escape_filter_chars(queried_sam_account_name))):
+            if isinstance(attr_value, list) and attr_desc == "objectSid":
+                object_filter = f"(&{get_attr_list_filter(attr_value)}{custom_filter})"
+                break
             if attr_value:
                 object_filter = '(&({}={}){})'.format(attr_desc, attr_value, custom_filter)
                 break
@@ -280,7 +291,7 @@ class NetRequester(LDAPRPCRequester):
                     pass
                 try:
                     attributes['inheritedobjectacetype'] = format_uuid_le(ace['Ace']['InheritedObjectType']) if \
-                    ace['Ace']['InheritedObjectType'] else '{00000000-0000-0000-0000-000000000000}'
+                        ace['Ace']['InheritedObjectType'] else '{00000000-0000-0000-0000-000000000000}'
                     attributes['inheritedobjectacetype'] = guid_map[attributes['inheritedobjectacetype']]
                 except KeyError:
                     pass
@@ -293,7 +304,7 @@ class NetRequester(LDAPRPCRequester):
     def get_netuser(self, queried_username=str(), queried_domain=str(),
                     ads_path=str(), admin_count=False, spn=False,
                     unconstrained=False, allow_delegation=False,
-                    preauth_notreq=False,
+                    preauth_notreq=False, queried_sid=str(),
                     custom_filter=str(), attributes=[]):
 
         if unconstrained:
@@ -312,9 +323,11 @@ class NetRequester(LDAPRPCRequester):
             user_search_filter += '(samAccountName={})'.format(queried_username)
         elif spn:
             user_search_filter += '(servicePrincipalName=*)'
-
+        if isinstance(queried_sid, list):
+            user_search_filter += get_attr_list_filter(queried_sid)
+        elif queried_sid:
+            user_search_filter += '(objectSid={})'.format(queried_sid)
         user_search_filter = '(&{})'.format(user_search_filter)
-
         return self._ldap_search(user_search_filter, adobj.User, attributes=attributes)
 
     @LDAPRPCRequester._ldap_connection_init
@@ -378,8 +391,9 @@ class NetRequester(LDAPRPCRequester):
 
             group_search_filter = custom_filter
             group_search_filter += '(objectCategory=group)'
-
-            if queried_sid:
+            if isinstance(queried_sid, list):
+                group_search_filter += get_attr_list_filter(queried_sid)
+            elif queried_sid:
                 self._logger.debug('Queried SID = {}'.format(queried_username))
                 group_search_filter += '(objectSid={})'.format(queried_sid)
             elif queried_groupname:
@@ -398,7 +412,7 @@ class NetRequester(LDAPRPCRequester):
     def get_netcomputer(self, queried_computername=str(), queried_spn=str(),
                         queried_os=str(), queried_sp=str(), queried_domain=str(), ads_path=str(),
                         printers=False, unconstrained=False, laps_passwords=False, pre_created=False,
-                        ping=False, full_data=False, custom_filter=str(), attributes=[]):
+                        ping=False, full_data=False, custom_filter=str(), attributes=tuple(), queried_sid=str()):
 
         if unconstrained:
             custom_filter += '(userAccountControl:1.2.840.113556.1.4.803:=524288)'
@@ -418,7 +432,10 @@ class NetRequester(LDAPRPCRequester):
                                         ('dnsHostName', queried_computername)):
             if attr_value:
                 computer_search_filter += '({}={})'.format(attr_desc, attr_value)
-
+        if isinstance(queried_sid, list):
+            computer_search_filter += get_attr_list_filter(queried_sid)
+        elif queried_sid:
+            computer_search_filter += '(objectSid={})'.format(queried_sid)
         if full_data:
             attributes = list()
         else:
@@ -430,6 +447,53 @@ class NetRequester(LDAPRPCRequester):
         computer_search_filter = '(&{})'.format(computer_search_filter)
 
         return self._ldap_search(computer_search_filter, adobj.Computer, attributes=attributes)
+
+    @LDAPRPCRequester._ldap_connection_init
+    def get_template(self, queried_guids: list[str] = None, name="", queried_domain=''):
+        template_search_filter = '(objectClass=pkicertificatetemplate)'
+        if queried_guids:
+            self._logger.debug('objectGUID={}'.format(queried_guids))
+            template_search_filter += get_attr_list_filter(queried_guids, "objectGUID")
+        if name:
+            self._logger.debug('template-name={}'.format(name))
+            template_search_filter += f"(name={name})"
+        attributes = [
+            "cn",
+            "distinguishedname",
+            "objectclass",
+            "whenchanged",
+            "whencreated",
+            "name",
+            "pkidefaultkeyspec",
+            "displayname",
+            "pkiexpirationperiod",
+            "pkioverlapperiod",
+            "mspki-enrollment-flag",
+            "mspki-private-key-flag",
+            "mspki-certificate-name-flag",
+            "mspki-minimal-key-size",
+            "mspki-ra-signature",
+            "pkiextendedkeyusage",
+            # "ntsecuritydescriptor",
+            "objectguid",
+        ]
+
+        template_search_filter = '(&{})'.format(template_search_filter)
+
+        return self._ldap_search(template_search_filter, adobj.Template, attributes=attributes, template_dn="cn=Configuration,")
+
+    @LDAPRPCRequester._ldap_connection_init
+    def get_container(self, queried_guids: list[str] = None, name="", queried_domain=''):
+        template_search_filter = '(objectclass=container)'
+        if queried_guids:
+            self._logger.debug('objectGUID={}'.format(queried_guids))
+            template_search_filter += get_attr_list_filter(queried_guids,"objectGUID")
+        if name:
+            self._logger.debug('container-name={}'.format(name))
+            template_search_filter += f"(name={name})"
+        attributes = []
+        template_search_filter = '(&{})'.format(template_search_filter)
+        return self._ldap_search(template_search_filter, adobj.Container, attributes=attributes)
 
     @LDAPRPCRequester._ldap_connection_init
     def get_netdomaincontroller(self, queried_domain=str()):
@@ -526,7 +590,7 @@ class NetRequester(LDAPRPCRequester):
 
     @LDAPRPCRequester._ldap_connection_init
     def get_netou(self, queried_domain=str(), queried_ouname='*',
-                  queried_guid=str(), ads_path=str(), full_data=False):
+                  queried_guid=str(), ads_path=str(), full_data=False, queried_sid=str()):
 
         ou_search_filter = '(objectCategory=organizationalUnit)'
 
@@ -540,7 +604,10 @@ class NetRequester(LDAPRPCRequester):
             attributes = list()
         else:
             attributes = ['distinguishedName']
-
+            if isinstance(queried_sid, list):
+                ou_search_filter += get_attr_list_filter(queried_sid)
+            elif queried_sid:
+                ou_search_filter += '(objectSid={})'.format(queried_sid)
         ou_search_filter = '(&{})'.format(ou_search_filter)
 
         return self._ldap_search(ou_search_filter, adobj.OU, attributes=attributes)
