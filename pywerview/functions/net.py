@@ -590,26 +590,21 @@ class NetRequester(LDAPRPCRequester):
 
     @LDAPRPCRequester._ldap_connection_init
     def get_netou(self, queried_domain=str(), queried_ouname='*',
-                  queried_guid=str(), ads_path=str(), full_data=False, queried_sid=str()):
+                  queried_guid=str(), ads_path=str(), full_data=False):
 
         ou_search_filter = '(objectCategory=organizationalUnit)'
 
         if queried_ouname:
             ou_search_filter += '(name={})'.format(queried_ouname)
-
-        if queried_guid:
+        if isinstance(queried_guid, list):
+            ou_search_filter += get_attr_list_filter(queried_guid,"objectGUID")
+        elif queried_guid:
             ou_search_filter += '(gplink=*{}*)'.format(queried_guid)
-
         if full_data:
             attributes = list()
         else:
             attributes = ['distinguishedName']
-            if isinstance(queried_sid, list):
-                ou_search_filter += get_attr_list_filter(queried_sid)
-            elif queried_sid:
-                ou_search_filter += '(objectSid={})'.format(queried_sid)
         ou_search_filter = '(&{})'.format(ou_search_filter)
-
         return self._ldap_search(ou_search_filter, adobj.OU, attributes=attributes)
 
     @LDAPRPCRequester._ldap_connection_init
