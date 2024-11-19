@@ -235,13 +235,15 @@ class NetRequester(LDAPRPCRequester):
 
         if resolve_sids:
             sid_mapping = adobj.ADObject._well_known_sids.copy()
-
+        acls = {}
         for security_descriptor in security_descriptors:
+            aces = list()
             sd = SR_SECURITY_DESCRIPTOR()
             try:
                 sd.fromString(security_descriptor.ntsecuritydescriptor)
             except TypeError:
                 continue
+            acl = {'owner_sid': sd['OwnerSid'].formatCanonical(), 'group_sid': sd['GroupSid'].formatCanonical(), }
             for ace in sd[acl_type]['Data']:
                 if guid_filter:
                     try:
@@ -296,9 +298,15 @@ class NetRequester(LDAPRPCRequester):
                 except KeyError:
                     pass
 
-                acl.append(adobj.ACE(attributes))
-
-        return acl
+                aces.append(adobj.ACE(attributes).to_dict())
+            acl["aces"] = aces
+            if security_descriptor.objectsid:
+                acls[security_descriptor.objectsid] = acl
+            elif security_descriptor.objectguid:
+                acls[security_descriptor.objectguid[1:-1].upper()] = acl
+            else:
+                raise ValueError(f"not found sid or guid object")
+        return acls
 
     @LDAPRPCRequester._ldap_connection_init
     def get_netuser(self, queried_username=str(), queried_domain=str(),
